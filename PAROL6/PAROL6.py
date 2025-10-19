@@ -27,14 +27,20 @@ class PAROL6(DHRobot3D):
         link3D_names = dict(
             link0 = 'base_rail',
             link1 = 'slider_rail',
-            link2 = 'shoulder_parol6',
-            link3 = 'upperarm_parol6',
-            link4 = 'forearm_parol6',
-            link5 = 'wrist1_parol6',
-            link6 = 'wrist2_parol6',
-            link7 = 'wrist3_parol6',
-            color0 = (0.2, 0.2, 0.2, 1),
-            color1 = (0.1, 0.1, 0.1, 1)
+            link2 = 'shoulder',
+            link3 = 'upperarm',
+            link4 = 'forearm',
+            link5 = 'wrist1',
+            link6 = 'wrist2',
+            link7 = 'wrist3',
+            color0 = [0.2, 0.2, 0.2],      # base_rail - dark gray
+            color1 = [0.3, 0.3, 0.3],      # slider_rail - medium gray
+            color2 = [0.8, 0.3, 0.2],      # shoulder - orange/red
+            color3 = [0.2, 0.5, 0.8],      # upperarm - blue
+            color4 = [0.3, 0.7, 0.3],      # forearm - green
+            color5 = [0.9, 0.7, 0.2],      # wrist1 - yellow/gold
+            color6 = [0.7, 0.3, 0.7],      # wrist2 - purple
+            color7 = [0.9, 0.5, 0.2]       # wrist3 - orange
         )
 
         # qtest = zeros: prismatic at 0, revolute offsets make standby pose = q = 0
@@ -42,15 +48,16 @@ class PAROL6(DHRobot3D):
 
         # Inline numeric values (mm->m) used directly here to match UR3 style.
         # Rail transforms first, then PAROL6 links mounted on slider
+        # After trotx(pi/2), z becomes y, and y becomes -z in the rotated frame
         qtest_transforms = [
-            spb.transl(0, 0, 0),                                                    # base_rail
-            spb.trotx(-pi/2),                                                       # slider_rail
-            spb.transl(0, 0, 0.11050) @ spb.trotz(pi),                             # shoulder (on slider)
-            spb.transl(0, -0.05, 0.11050 + 0.02) @ spb.trotz(pi),                  # upperarm
-            spb.transl(0, -0.02, 0.11050 + 0.20) @ spb.trotz(pi),                  # forearm
-            spb.transl(0, -0.02, 0.11050 + 0.35) @ spb.rpy2tr(0, -pi/2, pi),       # wrist1
-            spb.transl(0.0, -0.09, 0.11050 + 0.35) @ spb.rpy2tr(0, -pi/2, pi),     # wrist2
-            spb.transl(-0.08, -0.09, 0.11050 + 0.36) @ spb.trotz(pi)               # wrist3
+            spb.transl(0, 0, 0) @ spb.trotx(pi/2),                                  # base_rail (rotated 90° from original)
+            spb.trotx(-pi/2) @ spb.trotx(pi/2),                                     # slider_rail (original + 90° in x-axis)
+            spb.transl(0, 0.11050, 0) @ spb.trotx(pi/2) @ spb.trotz(pi),           # shoulder (on slider) - z->y after rotation
+            spb.transl(0, 0.11050 + 0.02, -0.05) @ spb.trotx(pi/2) @ spb.trotz(pi), # upperarm - y->-z after rotation
+            spb.transl(0, 0.11050 + 0.20, -0.02) @ spb.trotx(pi/2) @ spb.trotz(pi), # forearm
+            spb.transl(0, 0.11050 + 0.35, 2.5) @ spb.trotx(pi/2) @ spb.rpy2tr(pi/2, -pi/2, pi), # wrist1
+            spb.transl(0, 0.11050 + 0.35, -0.09) @ spb.trotx(pi/2) @ spb.rpy2tr(0, -pi/2, pi), # wrist2
+            spb.transl(-0.08, 0.11050 + 0.36, -0.09) @ spb.trotx(pi/2) @ spb.trotz(pi) # wrist3
         ]
 
         current_path = os.path.abspath(os.path.dirname(__file__))
@@ -82,8 +89,18 @@ class PAROL6(DHRobot3D):
         self.base = SE3(0.5, 0.5, 0)
         self.add_to_env(env)
 
-        q_goal = [self.q[i] - pi/3 for i in range(self.n)]
-        q_goal[0] = -0.8  # Move the rail link
+        # Target joint positions: [rail, j1, j2, j3, j4, j5, j6]
+        # j1=0°, j2=-90°, j3=180°, j4=0°, j5=0°, j6=180°
+        from math import radians
+        q_goal = [
+            0,              # Prismatic rail at 0
+            radians(0),     # Joint 1: 0°
+            radians(-90),   # Joint 2: -90°
+            radians(180),   # Joint 3: 180°
+            radians(0),     # Joint 4: 0°
+            radians(0),     # Joint 5: 0°
+            radians(180)    # Joint 6: 180°
+        ]
         qtraj = rtb.jtraj(self.q, q_goal, 50).q
         for q in qtraj:
             self.q = q
