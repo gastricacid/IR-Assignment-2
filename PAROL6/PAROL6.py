@@ -52,11 +52,11 @@ class PAROL6(DHRobot3D):
         qtest_transforms = [
             spb.transl(0, 0, 0) @ spb.trotx(pi/2),                                  # base_rail (rotated 90° from original)
             spb.trotx(-pi/2) @ spb.trotx(pi/2),                                     # slider_rail (original + 90° in x-axis)
-            spb.transl(0, 0.11050, 0) @ spb.trotx(pi/2) @ spb.trotz(pi),           # shoulder (on slider) - z->y after rotation
+            spb.transl(0.5, -0.38050, 2.4) @ spb.trotx(0) @ spb.trotz(pi),           # shoulder (on slider) - z->y after rotation
             spb.transl(0, 0.11050 + 0.02, -0.05) @ spb.trotx(pi/2) @ spb.trotz(pi), # upperarm - y->-z after rotation
-            spb.transl(0, 0.11050 + 0.20, -0.02) @ spb.trotx(pi/2) @ spb.trotz(pi), # forearm
-            spb.transl(0, 0.11050 + 0.35, 2.5) @ spb.trotx(pi/2) @ spb.rpy2tr(pi/2, -pi/2, pi), # wrist1
-            spb.transl(0, 0.11050 + 0.35, -0.09) @ spb.trotx(pi/2) @ spb.rpy2tr(0, -pi/2, pi), # wrist2
+            spb.transl(0, 0.11050 + 0.20, 3) @ spb.troty(-pi/14) @ spb.troty(pi) @ spb.trotz(0), # forearm
+            spb.transl(-0.2, 0.11050 + 0.35, 2.5) @ spb.trotx(pi/2) @ spb.rpy2tr(pi/2, -pi/2, pi), # wrist1
+            spb.transl(-1.05, 2.1050, 2.1) @ spb.troty(-pi/2) @ spb.trotx(pi/2) @ spb.troty(pi/20) @ spb.rpy2tr(0, -pi/2, pi), # wrist2
             spb.transl(-0.08, 0.11050 + 0.36, -0.09) @ spb.trotx(pi/2) @ spb.trotz(pi) # wrist3
         ]
 
@@ -83,16 +83,16 @@ class PAROL6(DHRobot3D):
         return links
 
     def test(self):
+        import random
         env = swift.Swift()
         env.launch(realtime=True)
         self.q = self._qtest
         self.base = SE3(0.5, 0.5, 0)
         self.add_to_env(env)
 
-        # Target joint positions: [rail, j1, j2, j3, j4, j5, j6]
-        # j1=0°, j2=-90°, j3=180°, j4=0°, j5=0°, j6=180°
+        # First target joint positions: [rail, j1, j2, j3, j4, j5, j6]
         from math import radians
-        q_goal = [
+        q_goal1 = [
             0,              # Prismatic rail at 0
             radians(0),     # Joint 1: 0°
             radians(-90),   # Joint 2: -90°
@@ -101,10 +101,38 @@ class PAROL6(DHRobot3D):
             radians(0),     # Joint 5: 0°
             radians(180)    # Joint 6: 180°
         ]
-        qtraj = rtb.jtraj(self.q, q_goal, 50).q
-        for q in qtraj:
+        qtraj1 = rtb.jtraj(self.q, q_goal1, 50).q
+        for q in qtraj1:
             self.q = q
             env.step(0.02)
+
+        # Pause before moving to the next trajectory
+        time.sleep(1)
+
+
+        # Joint limits (in radians or meters):
+        # 0: prismatic [0, 0.8]
+        # 1: revolute [-250°, 250°]
+        # 2: revolute [-141°, 141°]
+        # 3: revolute [-180°, 180°]
+        # 4: revolute [-212°, 212°]
+        # 5: revolute [-180°, 180°]
+        # 6: revolute [-inf, inf] (use [-2*pi, 2*pi] for practical demo)
+        deg = lambda x: x * pi / 180
+        q_rand = [random.uniform(0, 0.8),
+                  random.uniform(-deg(250), deg(250)),
+                  random.uniform(-deg(141), deg(141)),
+                  random.uniform(-deg(180), deg(180)),
+                  random.uniform(-deg(212), deg(212)),
+                  random.uniform(-deg(180), deg(180)),
+                  random.uniform(-2*pi, 2*pi)]
+
+        print("Moving to random joint configuration:", q_rand)
+        qtraj2 = rtb.jtraj(self.q, q_rand, 50).q
+        for q in qtraj2:
+            self.q = q
+            env.step(0.02)
+
         env.hold()
         time.sleep(3)
 
