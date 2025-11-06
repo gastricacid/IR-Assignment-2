@@ -1,0 +1,126 @@
+#!/usr/bin/env python
+"""
+Fanuc LR Mate 200iC — Standard DH with 3D model (6R + base_link)
+- Visuals: base_link + link_1 … link_6 (7 visuals total)
+"""
+
+import os
+import time
+import numpy as np
+import swift
+import roboticstoolbox as rtb
+from spatialmath import SE3
+import spatialmath.base as spb
+from math import pi
+from ir_support.robots.DHRobot3D import DHRobot3D
+
+
+class LRMate200iC(DHRobot3D):
+    def __init__(self):
+        # -------------------- DH model  --------------------
+        links = self._create_DH()
+
+        # -------------------- Visual mapping (7 visuals = base + 6 joints) --------------------
+        link3D_names = dict(
+            link0="base_link",
+            link1="link_1",
+            link2="link_2",
+            link3="link_3",
+            link4="link_4",
+            link5="link_5",
+            link6="link_6",
+
+            # Colors (optional)
+            color0=(0.6, 0.2, 0.8, 1.0),
+            color1=(0.95, 0.85, 0.10, 1.0),
+            color2=(0.6, 0.2, 0.8, 1.0),
+            color3=(0.95, 0.85, 0.10, 1.0),
+            color4=(0.50, 0.50, 0.50, 1.0),
+            color5=(0.95, 0.85, 0.10, 1.0),
+            color6=(1.0, 0.6, 0.0, 1.0),
+        )
+
+        # -------------------- Calibration pose & per-link fixed transforms --------------------
+        qtest = [0, 0, 0, 0, 0, 0]  # len == 6 (no base joint)
+
+        qtest_transforms = [
+            spb.transl(0, 0, 0),          # base_link
+            spb.transl(0, 0, 0.33),       # link_1
+            spb.transl(0.075, 0, 0.33),   # link_2
+            spb.transl(0.075, 0, 0.63),   # link_3
+            spb.transl(0.075, 0, 0.705),  # link_4
+            spb.transl(0.395, 0, 0.705),  # link_5
+            spb.transl(0.475, 0, 0.705),  # link_6
+        ]
+
+        current_path = os.path.abspath(os.path.dirname(__file__))
+
+        super().__init__(
+            links,
+            link3D_names,
+            link3d_dir=current_path,
+            name="LRMate200iC",
+            qtest=qtest,
+            qtest_transforms=qtest_transforms
+        )
+
+        self.q = qtest
+
+    # -------------------- Kinematics --------------------
+    def _create_DH(self):
+        links = []
+        a      = [0.075, 0.300, -0.075, 0.0,   0.0,  0.0]
+        d      = [0.33,  0.0,    0.0,    0.320, 0.0,  0.080]
+        alpha  = [-pi/2, 0.0,    pi/2,  -pi/2,  pi/2, pi]
+        offset = [0.0,  -pi/2,   pi,     0.0,   0.0,  pi]
+        qlim   = [
+            [-17*pi/18, 17*pi/18],
+            [-11*pi/18, 5*pi/6],
+            [-8*pi/9,   8*pi/9],
+            [-10*pi/9,  10*pi/9],
+            [-7*pi/9,   7*pi/9],
+            [-2*pi,     2*pi],
+        ]
+        for i in range(6):
+            links.append(rtb.RevoluteDH(
+                d=d[i], a=a[i], alpha=alpha[i], offset=offset[i], qlim=qlim[i]
+            ))
+        return links
+
+    def test_press_enter(self):
+        env = swift.Swift(); env.launch(realtime=True); env.step(0.02)
+        self.add_to_env(env)
+
+        print("Robot spawned. Press Enter to move…")
+        try: input()
+        except EOFError: pass
+
+        # IK demo
+        qseed = np.array(self.q, dtype=float)
+        mask  = [1, 1, 1, 0, 0, 0]
+        T_goal = SE3(0., 0, 0)
+
+        sol = self.ikine_LM(
+            T_goal, q0=qseed, mask=mask,
+            joint_limits=True, ilimit=1000, slimit=100, tol=1e-6
+        )
+        if not sol.success:
+            print("IK did not converge. reason:",
+                  getattr(sol, "reason", "unknown"),
+                  "iterations:", getattr(sol, "iterations", "?"),
+                  "residual:", getattr(sol, "residual", "?"))
+            env.hold(); return
+
+        qtraj = rtb.jtraj(self.q, sol.q, 60).q
+        for q in qtraj:
+            self.q = q
+            env.step(0.02)
+
+        print("Motion complete.")
+        env.hold(); time.sleep(1)
+
+
+if __name__ == "__main__":
+    r = LRMate200iC()
+    print(r)
+    r.test_press_enter()
